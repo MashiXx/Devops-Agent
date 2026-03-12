@@ -4,35 +4,34 @@ import api from "./api";
 // ─── THEMES ──────────────────────────────────────────────────────────────────
 const THEMES = {
   dark: {
-    bg:         "#07080f",
-    bgAlt:      "#0b0d17",
-    bgDeep:     "#090b14",
-    bgCard:     "#0d1020",
-    bgInput:    "#07080f",
-    bgOverlay:  "#000000bb",
-    bgModal:    "#0d1020",
-    border:     "#1a1f35",
-    borderLight:"#1e2a40",
-    borderInput:"#1e3a5f",
-    text:       "#e2e8f0",
-    textMuted:  "#94a3b8",
-    textDim:    "#64748b",
-    textDimmer: "#475569",
-    textFaint:  "#334155",
-    textGhost:  "#1e2a40",
-    textRule:   "#1a2535",
-    accent:     "#22d3ee",
-    accentDark: "#0c2233",
-    accentBorder:"#0e7490",
-    analysis:   "#0a1220",
-    analysisBorder:"#162032",
-    analysisText:"#7090b0",
-    successBg:  "#061a10",
-    successBorder:"#145228",
-    codeBg:     "#050710",
-    scrollTrack:"#0d0f1a",
-    scrollThumb:"#1e2740",
-    // env badge colors stay the same in both modes
+    bg:         "#1e1e1e",
+    bgAlt:      "#252526",
+    bgDeep:     "#181818",
+    bgCard:     "#2d2d2d",
+    bgInput:    "#3c3c3c",
+    bgOverlay:  "#000000aa",
+    bgModal:    "#252526",
+    border:     "#3e3e42",
+    borderLight:"#474747",
+    borderInput:"#007acc",
+    text:       "#d4d4d4",
+    textMuted:  "#cccccc",
+    textDim:    "#969696",
+    textDimmer: "#858585",
+    textFaint:  "#6e6e6e",
+    textGhost:  "#4e4e4e",
+    textRule:   "#3e3e42",
+    accent:     "#007acc",
+    accentDark: "#094771",
+    accentBorder:"#007acc",
+    analysis:   "#1b2838",
+    analysisBorder:"#264f78",
+    analysisText:"#9cdcfe",
+    successBg:  "#1b2e1b",
+    successBorder:"#2ea04360",
+    codeBg:     "#1e1e1e",
+    scrollTrack:"#1e1e1e",
+    scrollThumb:"#424242",
   },
   light: {
     bg:         "#f8fafc",
@@ -96,10 +95,10 @@ const Dot = ({ color, pulse }) => (
 
 const envStyleDark = (e) =>
   e === "production"
-    ? { bg: "#2a0808", fg: "#fca5a5", border: "#7f1d1d" }
+    ? { bg: "#4b1818", fg: "#f48771", border: "#f14c4c" }
     : e === "staging"
-    ? { bg: "#072010", fg: "#86efac", border: "#166534" }
-    : { bg: "#080f2a", fg: "#93c5fd", border: "#1e3a8a" };
+    ? { bg: "#1b2e1b", fg: "#89d185", border: "#2ea043" }
+    : { bg: "#1b2838", fg: "#9cdcfe", border: "#007acc" };
 
 const envStyleLight = (e) =>
   e === "production"
@@ -416,9 +415,9 @@ export default function App() {
         button { font-family: inherit; cursor: pointer; border: none; }
         .hover-dim:hover { opacity: .7; }
         .run-btn:hover:not(:disabled) { background: ${t.accent} !important; color: ${t.bg} !important; }
-        .preset-btn:hover { background: ${theme === "dark" ? "#0f1a2e" : "#e2e8f0"} !important; border-color: ${theme === "dark" ? "#1e3a5f" : "#94a3b8"} !important; }
-        .srv-tab:hover { background: ${theme === "dark" ? "#0c1020" : "#e2e8f0"} !important; }
-        .theme-toggle:hover { background: ${theme === "dark" ? "#1e2a40" : "#cbd5e1"} !important; }
+        .preset-btn:hover { background: ${theme === "dark" ? "#2a2d2e" : "#e2e8f0"} !important; border-color: ${theme === "dark" ? "#007acc" : "#94a3b8"} !important; }
+        .srv-tab:hover { background: ${theme === "dark" ? "#2a2d2e" : "#e2e8f0"} !important; }
+        .theme-toggle:hover { background: ${theme === "dark" ? "#3e3e42" : "#cbd5e1"} !important; }
       `}</style>
 
       {/* ── MODALS ── */}
@@ -427,9 +426,9 @@ export default function App() {
 
       {/* ── BACKEND OFFLINE BANNER ── */}
       {backendOk === false && (
-        <div style={{ background: theme === "dark" ? "#3b0a0a" : "#fef2f2", borderBottom: `1px solid ${theme === "dark" ? "#7f1d1d" : "#fca5a5"}`, padding: "10px 20px", fontSize: 12, color: theme === "dark" ? "#fca5a5" : "#b91c1c", display: "flex", gap: 12, alignItems: "center" }}>
+        <div style={{ background: theme === "dark" ? "#5a1d1d" : "#fef2f2", borderBottom: `1px solid ${theme === "dark" ? "#f14c4c" : "#fca5a5"}`, padding: "10px 20px", fontSize: 12, color: theme === "dark" ? "#f48771" : "#b91c1c", display: "flex", gap: 12, alignItems: "center" }}>
           <span>⚠️</span>
-          <span><b>Backend offline.</b> Chạy backend trước: <code style={{ background: theme === "dark" ? "#500" : "#fee2e2", padding: "1px 6px", borderRadius: 3 }}>cd backend && npm install && cp .env.example .env && node server.js</code></span>
+          <span><b>Backend offline.</b> Chạy backend trước: <code style={{ background: theme === "dark" ? "#3c2020" : "#fee2e2", padding: "1px 6px", borderRadius: 3 }}>cd backend && npm install && cp .env.example .env && node server.js</code></span>
         </div>
       )}
 
@@ -611,7 +610,7 @@ export default function App() {
                     {entry.warnings?.length > 0 && (
                       <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
                         {entry.warnings.map((w, i) => (
-                          <span key={i} style={{ background: theme === "dark" ? "#1c1000" : "#fefce8", border: `1px solid ${theme === "dark" ? "#7c5300" : "#fbbf24"}`, borderRadius: 4, padding: "2px 8px", fontSize: 10, color: "#fbbf24" }}>⚠ {w}</span>
+                          <span key={i} style={{ background: theme === "dark" ? "#352a05" : "#fefce8", border: `1px solid ${theme === "dark" ? "#cca700" : "#fbbf24"}`, borderRadius: 4, padding: "2px 8px", fontSize: 10, color: "#cca700" }}>⚠ {w}</span>
                         ))}
                       </div>
                     )}
@@ -625,17 +624,17 @@ export default function App() {
                   return (
                     <div key={ci} style={{ marginLeft: 16, marginBottom: 6 }}>
                       {/* Command bar */}
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", background: t.bgCard, borderRadius: res ? "5px 5px 0 0" : "5px", border: `1px solid ${res ? (res.ok ? (theme === "dark" ? "#0f3020" : "#86efac") : (theme === "dark" ? "#2a0f10" : "#fca5a5")) : t.borderLight}`, borderBottom: res ? "none" : undefined }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", background: t.bgCard, borderRadius: res ? "5px 5px 0 0" : "5px", border: `1px solid ${res ? (res.ok ? (theme === "dark" ? "#2ea04360" : "#86efac") : (theme === "dark" ? "#f14c4c50" : "#fca5a5")) : t.borderLight}`, borderBottom: res ? "none" : undefined }}>
                         <span style={{ color: t.textGhost, fontSize: 10, width: 18, textAlign: "right", flexShrink: 0 }}>{ci+1}</span>
                         <span style={{ color: t.textDimmer }}>$</span>
-                        <span style={{ color: theme === "dark" ? "#93c5fd" : "#1d4ed8", flex: 1, fontWeight: 500, wordBreak: "break-all" }}>{cmd.cmd}</span>
+                        <span style={{ color: theme === "dark" ? "#9cdcfe" : "#1d4ed8", flex: 1, fontWeight: 500, wordBreak: "break-all" }}>{cmd.cmd}</span>
                         {cmd.purpose && <span style={{ color: t.textGhost, fontSize: 10, flexShrink: 0, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>#{cmd.purpose}</span>}
                         {live && <span style={{ color: "#f59e0b", fontSize: 11, flexShrink: 0 }}><Spinner /></span>}
                         {res  && <span style={{ color: res.ok ? "#22c55e" : "#ef4444", fontSize: 10, flexShrink: 0, fontWeight: 700 }}>{res.ok ? "✓ exit 0" : "✗ exit 1"}</span>}
                       </div>
                       {/* Output */}
                       {res && (
-                        <pre style={{ margin: 0, padding: "8px 10px 8px 38px", background: t.codeBg, border: `1px solid ${res.ok ? (theme === "dark" ? "#0f3020" : "#86efac") : (theme === "dark" ? "#2a0f10" : "#fca5a5")}`, borderTop: "none", borderRadius: "0 0 5px 5px", fontSize: 11, color: res.ok ? (theme === "dark" ? "#7fb59a" : "#15803d") : "#f87171", lineHeight: 1.6, overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 200 }}>
+                        <pre style={{ margin: 0, padding: "8px 10px 8px 38px", background: t.codeBg, border: `1px solid ${res.ok ? (theme === "dark" ? "#2ea04360" : "#86efac") : (theme === "dark" ? "#f14c4c50" : "#fca5a5")}`, borderTop: "none", borderRadius: "0 0 5px 5px", fontSize: 11, color: res.ok ? (theme === "dark" ? "#89d185" : "#15803d") : "#f48771", lineHeight: 1.6, overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 200 }}>
                           {res.output}
                         </pre>
                       )}
@@ -647,7 +646,7 @@ export default function App() {
                 {entry.status === "done" && entry.summary && (
                   <div style={{ marginLeft: 16, marginTop: 6, display: "flex", gap: 8, padding: "7px 12px", background: t.successBg, border: `1px solid ${t.successBorder}`, borderRadius: 5 }}>
                     <span style={{ color: "#22c55e" }}>✓</span>
-                    <span style={{ color: theme === "dark" ? "#6ee7b7" : "#15803d", fontSize: 11 }}>{entry.summary}</span>
+                    <span style={{ color: theme === "dark" ? "#89d185" : "#15803d", fontSize: 11 }}>{entry.summary}</span>
                   </div>
                 )}
 
@@ -674,7 +673,7 @@ export default function App() {
               <button
                 onClick={() => setMode(m => m === "ai" ? "direct" : "ai")}
                 title={mode === "ai" ? "Switch to Direct SSH mode" : "Switch to AI mode"}
-                style={{ padding: "9px 10px", borderRadius: 6, border: `1px solid ${mode === "direct" ? "#f59e0b" : t.accentBorder}`, background: mode === "direct" ? (theme === "dark" ? "#1c1000" : "#fefce8") : t.accentDark, color: mode === "direct" ? "#f59e0b" : t.accent, fontSize: 11, flexShrink: 0, transition: "all .15s", fontWeight: 700, fontFamily: "inherit", cursor: "pointer", minWidth: 36, textAlign: "center" }}>
+                style={{ padding: "9px 10px", borderRadius: 6, border: `1px solid ${mode === "direct" ? "#cca700" : t.accentBorder}`, background: mode === "direct" ? (theme === "dark" ? "#352a05" : "#fefce8") : t.accentDark, color: mode === "direct" ? "#cca700" : t.accent, fontSize: 11, flexShrink: 0, transition: "all .15s", fontWeight: 700, fontFamily: "inherit", cursor: "pointer", minWidth: 36, textAlign: "center" }}>
                 {mode === "ai" ? "AI" : "$_"}
               </button>
               <div style={{ flex: 1, background: t.bgInput, border: `1px solid ${mode === "direct" ? "#f59e0b44" : t.borderInput}`, borderRadius: 6, padding: "9px 12px", display: "flex", gap: 7, alignItems: "flex-end", transition: "border-color .15s" }}>
