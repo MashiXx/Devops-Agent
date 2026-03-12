@@ -112,11 +112,25 @@ const statusColor = (s) =>
   s === "online" ? "#22c55e" : s === "error" ? "#ef4444" : s === "configured" ? "#f59e0b" : "#475569";
 
 // ─── ADD/EDIT SERVER MODAL ────────────────────────────────────────────────────
-function ServerModal({ initial, onSave, onClose, t }) {
+function ServerModal({ initial, onSave, onTest, onClose, t }) {
   const [form, setForm] = useState(
     initial || { name: "", host: "", port: "22", user: "ubuntu", env: "production", authType: "password", password: "", privateKey: "", passphrase: "" }
   );
+  const [testResult, setTestResult] = useState(null); // null | { ok, message }
+  const [testing, setTesting] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await onTest(form);
+      setTestResult(res);
+    } catch (err) {
+      setTestResult({ ok: false, message: err.message });
+    }
+    setTesting(false);
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: t.bgOverlay, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
@@ -178,6 +192,19 @@ function ServerModal({ initial, onSave, onClose, t }) {
           </div>
         )}
 
+        {/* Test Connection */}
+        <div style={{ marginBottom: 14 }}>
+          <button onClick={handleTest} disabled={testing || !form.host || !form.user}
+            style={{ width: "100%", padding: "8px", borderRadius: 5, border: `1px solid ${t.borderLight}`, background: "transparent", color: t.textMuted, fontSize: 11, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: (!form.host || !form.user) ? 0.4 : 1 }}>
+            {testing ? <><Spinner /> Testing...</> : "⟳ Test Connection"}
+          </button>
+          {testResult && (
+            <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 5, fontSize: 11, lineHeight: 1.5, border: `1px solid ${testResult.ok ? "#145228" : "#7f1d1d"}`, background: testResult.ok ? "#061a10" : "#2a0808", color: testResult.ok ? "#6ee7b7" : "#fca5a5" }}>
+              {testResult.ok ? "✓ " : "✗ "}{testResult.message}
+            </div>
+          )}
+        </div>
+
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose}
             style={{ flex: 1, background: "transparent", border: `1px solid ${t.borderLight}`, borderRadius: 5, color: t.textDim, padding: "9px", fontFamily: "inherit", fontSize: 12, cursor: "pointer" }}>
@@ -199,6 +226,7 @@ export default function App() {
   const [activeId,      setActiveId]      = useState(null);
   const [sessions,      setSessions]      = useState({});   // { serverId: [entry] }
   const [task,          setTask]          = useState("");
+  const [mode,          setMode]          = useState("ai"); // "ai" | "direct"
   const [running,       setRunning]       = useState(false);
   const [backendOk,     setBackendOk]     = useState(null); // null=checking, true, false
   const [modal,         setModal]         = useState(null); // null | "add" | { server }
@@ -254,42 +282,62 @@ export default function App() {
 
     const srv = selected;
     const eid = Date.now();
-    const baseEntry = {
-      id: eid, task: t, server: srv,
-      ts: new Date().toLocaleTimeString("vi-VN"),
-      status: "thinking", analysis: "", commands: [], results: [], warnings: [], summary: "",
-    };
-    addEntry(srv.id, baseEntry);
 
-    try {
-      // 1️⃣ Claude plans
-      const plan = await api.claudePlan(t, srv, sessions[srv.id] || []);
-      if (plan.error) throw new Error(plan.error);
+    if (mode === "direct") {
+      // ── Direct mode: run command as-is via SSH ──
+      const baseEntry = {
+        id: eid, task: t, server: srv,
+        ts: new Date().toLocaleTimeString("vi-VN"),
+        status: "executing", analysis: "", commands: [{ cmd: t, purpose: "direct" }], results: [], warnings: [], summary: "",
+      };
+      addEntry(srv.id, baseEntry);
 
-      patchEntry(srv.id, eid, {
-        status: "executing",
-        analysis:  plan.analysis  || "",
-        commands:  plan.commands  || [],
-        warnings:  plan.warnings  || [],
-        summary:   plan.summary   || "",
-      });
-
-      // 2️⃣ Execute each command via real SSH
-      const results = [];
-      for (const cmdObj of (plan.commands || [])) {
-        const res = await api.execSSH(srv.id, cmdObj.cmd, 30000);
-        const ok  = res.ok && res.exitCode === 0;
-        results.push({ ...cmdObj, output: res.output || res.error || "", ok });
-        patchEntry(srv.id, eid, { results: [...results] });
+      try {
+        const res = await api.execSSH(srv.id, t, 30000);
+        const ok = res.ok && res.exitCode === 0;
+        const results = [{ cmd: t, purpose: "direct", output: res.output || res.error || "", ok }];
+        patchEntry(srv.id, eid, { status: "done", results });
+      } catch (err) {
+        patchEntry(srv.id, eid, { status: "error", analysis: `❌ ${err.message}` });
       }
+    } else {
+      // ── AI mode: Claude plans then execute ──
+      const baseEntry = {
+        id: eid, task: t, server: srv,
+        ts: new Date().toLocaleTimeString("vi-VN"),
+        status: "thinking", analysis: "", commands: [], results: [], warnings: [], summary: "",
+      };
+      addEntry(srv.id, baseEntry);
 
-      patchEntry(srv.id, eid, { status: "done", results });
-    } catch (err) {
-      patchEntry(srv.id, eid, { status: "error", analysis: `❌ ${err.message}` });
+      try {
+        const plan = await api.claudePlan(t, srv, sessions[srv.id] || []);
+        if (plan.error) throw new Error(plan.error);
+
+        patchEntry(srv.id, eid, {
+          status: "executing",
+          analysis:  plan.analysis  || "",
+          commands:  plan.commands  || [],
+          warnings:  plan.warnings  || [],
+          summary:   plan.summary   || "",
+        });
+
+        const results = [];
+        for (const cmdObj of (plan.commands || [])) {
+          const res = await api.execSSH(srv.id, cmdObj.cmd, 30000);
+          const ok  = res.ok && res.exitCode === 0;
+          results.push({ ...cmdObj, output: res.output || res.error || "", ok });
+          patchEntry(srv.id, eid, { results: [...results] });
+        }
+
+        patchEntry(srv.id, eid, { status: "done", results });
+      } catch (err) {
+        patchEntry(srv.id, eid, { status: "error", analysis: `❌ ${err.message}` });
+      }
     }
 
     setRunning(false);
-  }, [task, running, selected, sessions]);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, [task, running, selected, sessions, mode]);
 
   // ── SSH test ─────────────────────────────────────────────────────────────────
   const testServer = async (srv) => {
@@ -311,6 +359,34 @@ export default function App() {
     setServers(fresh);
     setActiveId(res.id || fresh[fresh.length - 1]?.id);
     setModal(null);
+  };
+
+  // ── Edit server ────────────────────────────────────────────────────────────────
+  const handleEditServer = async (form) => {
+    await api.updateServer(form.id, form);
+    const fresh = await api.getServers();
+    setServers(fresh);
+    setModal(null);
+  };
+
+  // ── Test connection from modal (saves first if editing, then tests) ─────────
+  const handleTestFromModal = async (form) => {
+    // If editing existing server, save credentials first so backend can use them
+    if (form.id) {
+      await api.updateServer(form.id, form);
+      const res = await api.testSSH(form.id);
+      const fresh = await api.getServers();
+      setServers(fresh.map(s => s.id === form.id ? { ...s, status: res.ok ? "online" : "error" } : s));
+      return { ok: res.ok, message: res.ok ? `Connected! ${res.output || ""}`.trim() : (res.error || "Connection failed") };
+    }
+    // For new server: add temporarily, test, then keep
+    const added = await api.addServer(form);
+    const sid = added.id;
+    const res = await api.testSSH(sid);
+    const fresh = await api.getServers();
+    setServers(fresh.map(s => s.id === sid ? { ...s, status: res.ok ? "online" : "error" } : s));
+    setActiveId(sid);
+    return { ok: res.ok, message: res.ok ? `Connected! ${res.output || ""}`.trim() : (res.error || "Connection failed") };
   };
 
   // ── Delete server ─────────────────────────────────────────────────────────────
@@ -344,7 +420,8 @@ export default function App() {
       `}</style>
 
       {/* ── MODALS ── */}
-      {modal === "add" && <ServerModal onSave={handleAddServer} onClose={() => setModal(null)} t={t} />}
+      {modal === "add" && <ServerModal onSave={handleAddServer} onTest={handleTestFromModal} onClose={() => setModal(null)} t={t} />}
+      {modal && modal !== "add" && modal.id && <ServerModal initial={modal} onSave={handleEditServer} onTest={handleTestFromModal} onClose={() => setModal(null)} t={t} />}
 
       {/* ── BACKEND OFFLINE BANNER ── */}
       {backendOk === false && (
@@ -380,9 +457,14 @@ export default function App() {
                 <Dot color={statusColor(s.status)} pulse={s.status === "online"} />
                 <span style={{ fontWeight: isActive ? 600 : 400 }}>{s.name}</span>
                 <span style={{ background: ec.bg, color: ec.fg, border: `1px solid ${ec.border}`, borderRadius: 3, padding: "0 4px", fontSize: 9, fontWeight: 700 }}>{s.env.slice(0,4).toUpperCase()}</span>
-                {/* Test / delete */}
-                <button onClick={e => { e.stopPropagation(); testServer(s); }} className="hover-dim"
+                {/* Edit / Test / delete */}
+                <button onClick={e => { e.stopPropagation(); setModal({ ...s }); }} className="hover-dim"
                   style={{ background: "none", color: t.textFaint, fontSize: 10, padding: "1px 3px", borderRadius: 3, marginLeft: 2 }}
+                  title="Edit server">
+                  ✎
+                </button>
+                <button onClick={e => { e.stopPropagation(); testServer(s); }} className="hover-dim"
+                  style={{ background: "none", color: t.textFaint, fontSize: 10, padding: "1px 3px", borderRadius: 3 }}
                   title="Test SSH connection">
                   {testingId === s.id ? <Spinner /> : "⟳"}
                 </button>
@@ -574,8 +656,15 @@ export default function App() {
           {/* ── INPUT ── */}
           <div style={{ background: t.bgAlt, borderTop: `1px solid ${t.border}`, padding: "10px 14px" }}>
             <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-              <div style={{ flex: 1, background: t.bgInput, border: `1px solid ${t.borderInput}`, borderRadius: 6, padding: "9px 12px", display: "flex", gap: 7, alignItems: "flex-end" }}>
-                <span style={{ color: t.accent, fontSize: 14, flexShrink: 0, paddingBottom: 1 }}>❯</span>
+              {/* Mode toggle */}
+              <button
+                onClick={() => setMode(m => m === "ai" ? "direct" : "ai")}
+                title={mode === "ai" ? "Switch to Direct SSH mode" : "Switch to AI mode"}
+                style={{ padding: "9px 10px", borderRadius: 6, border: `1px solid ${mode === "direct" ? "#f59e0b" : t.accentBorder}`, background: mode === "direct" ? (theme === "dark" ? "#1c1000" : "#fefce8") : t.accentDark, color: mode === "direct" ? "#f59e0b" : t.accent, fontSize: 11, flexShrink: 0, transition: "all .15s", fontWeight: 700, fontFamily: "inherit", cursor: "pointer", minWidth: 36, textAlign: "center" }}>
+                {mode === "ai" ? "AI" : "$_"}
+              </button>
+              <div style={{ flex: 1, background: t.bgInput, border: `1px solid ${mode === "direct" ? "#f59e0b44" : t.borderInput}`, borderRadius: 6, padding: "9px 12px", display: "flex", gap: 7, alignItems: "flex-end", transition: "border-color .15s" }}>
+                <span style={{ color: mode === "direct" ? "#f59e0b" : t.accent, fontSize: 14, flexShrink: 0, paddingBottom: 1 }}>{mode === "direct" ? "$" : "❯"}</span>
                 <textarea
                   ref={inputRef}
                   value={task}
@@ -585,6 +674,8 @@ export default function App() {
                   placeholder={
                     backendOk === false ? "Backend offline — start server first…"
                     : !selected        ? "Add a server first…"
+                    : mode === "direct"
+                    ? `Nhập lệnh SSH cho ${selected?.name}…  (Enter ↵ chạy)`
                     : `Mô tả task cho ${selected?.name}…  (Enter ↵ chạy, Shift+Enter xuống dòng)`
                   }
                   rows={1}
@@ -599,8 +690,10 @@ export default function App() {
                 {running ? <><Spinner /> Đang chạy…</> : "▶ Run"}
               </button>
             </div>
-            <div style={{ fontSize: 9, color: t.textRule, marginTop: 5, paddingLeft: 22 }}>
-              Enter↵ run · Shift+Enter newline · Real SSH via backend · AI plans automatically
+            <div style={{ fontSize: 9, color: t.textRule, marginTop: 5, paddingLeft: 54 }}>
+              {mode === "direct"
+                ? "DIRECT MODE — Enter↵ chạy lệnh thẳng · Không qua AI · Click [AI] để chuyển về"
+                : "AI MODE — Enter↵ run · Shift+Enter newline · AI plans automatically · Click [$_] để chạy lệnh thẳng"}
             </div>
           </div>
         </main>
