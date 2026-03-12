@@ -232,6 +232,7 @@ export default function App() {
   const [modal,         setModal]         = useState(null); // null | "add" | { server }
   const [testingId,     setTestingId]     = useState(null);
   const [theme,         setTheme]         = useState(() => localStorage.getItem("theme") || "dark");
+  const [cwd,           setCwd]           = useState({});    // { serverId: "/path" }
   const termRef  = useRef(null);
   const inputRef = useRef(null);
 
@@ -284,7 +285,7 @@ export default function App() {
     const eid = Date.now();
 
     if (mode === "direct") {
-      // ── Direct mode: run command as-is via SSH ──
+      // ── Direct mode: persistent SSH, preserves cwd ──
       const baseEntry = {
         id: eid, task: t, server: srv,
         ts: new Date().toLocaleTimeString("vi-VN"),
@@ -293,8 +294,9 @@ export default function App() {
       addEntry(srv.id, baseEntry);
 
       try {
-        const res = await api.execSSH(srv.id, t, 30000);
+        const res = await api.execSSH(srv.id, t, 30000, true);
         const ok = res.ok && res.exitCode === 0;
+        if (res.cwd) setCwd(prev => ({ ...prev, [srv.id]: res.cwd }));
         const results = [{ cmd: t, purpose: "direct", output: res.output || res.error || "", ok }];
         patchEntry(srv.id, eid, { status: "done", results });
       } catch (err) {
@@ -541,8 +543,17 @@ export default function App() {
               ))}
             </div>
             <div style={{ flex: 1, textAlign: "center", fontSize: 11, color: t.textGhost }}>
-              {selected ? `${selected.user}@${selected.name} — ${selected.host}:${selected.port} — SSH` : "No server selected"}
+              {selected
+                ? `${selected.user}@${selected.name} — ${selected.host}:${selected.port}${mode === "direct" && cwd[selected.id] ? ` — ${cwd[selected.id]}` : ""} — SSH${mode === "direct" ? " (persistent)" : ""}`
+                : "No server selected"}
             </div>
+            {mode === "direct" && selected && cwd[selected.id] && (
+              <button onClick={() => { api.disconnectSSH(selected.id); setCwd(p => { const n = { ...p }; delete n[selected.id]; return n; }); }}
+                style={{ background: "none", color: "#f59e0b", fontSize: 10, padding: "2px 6px", borderRadius: 3, border: `1px solid #f59e0b44` }}
+                title="Disconnect persistent SSH session">
+                disconnect
+              </button>
+            )}
             <button onClick={() => setSessions(s => ({ ...s, [selected?.id]: [] }))}
               style={{ background: "none", color: t.textFaint, fontSize: 11, padding: "2px 8px", borderRadius: 3 }}>
               clear
@@ -647,7 +658,10 @@ export default function App() {
             {/* Blinking cursor */}
             {!running && (
               <div style={{ display: "flex", gap: 8, color: t.textGhost, fontSize: 12, alignItems: "center" }}>
-                <span style={{ color: t.accent }}>❯</span>
+                {mode === "direct" && selected && cwd[selected.id] && (
+                  <span style={{ color: "#6ee7b7", fontSize: 10 }}>{cwd[selected.id]}</span>
+                )}
+                <span style={{ color: mode === "direct" ? "#f59e0b" : t.accent }}>{mode === "direct" ? "$" : "❯"}</span>
                 <span style={{ animation: "blink 1.2s infinite" }}>█</span>
               </div>
             )}
@@ -664,6 +678,9 @@ export default function App() {
                 {mode === "ai" ? "AI" : "$_"}
               </button>
               <div style={{ flex: 1, background: t.bgInput, border: `1px solid ${mode === "direct" ? "#f59e0b44" : t.borderInput}`, borderRadius: 6, padding: "9px 12px", display: "flex", gap: 7, alignItems: "flex-end", transition: "border-color .15s" }}>
+                {mode === "direct" && selected && cwd[selected.id] && (
+                  <span style={{ color: "#6ee7b7", fontSize: 10, flexShrink: 0, paddingBottom: 2, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cwd[selected.id]}</span>
+                )}
                 <span style={{ color: mode === "direct" ? "#f59e0b" : t.accent, fontSize: 14, flexShrink: 0, paddingBottom: 1 }}>{mode === "direct" ? "$" : "❯"}</span>
                 <textarea
                   ref={inputRef}

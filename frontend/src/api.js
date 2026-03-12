@@ -29,11 +29,18 @@ const api = {
       body: JSON.stringify({ serverId }),
     }).then(r => r.json()),
 
-  execSSH: (serverId, command, timeout) =>
+  execSSH: (serverId, command, timeout, persistent = false) =>
     fetch(`${BASE}/api/ssh/exec`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ serverId, command, timeout }),
+      body: JSON.stringify({ serverId, command, timeout, persistent }),
+    }).then(r => r.json()),
+
+  disconnectSSH: (serverId) =>
+    fetch(`${BASE}/api/ssh/disconnect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ serverId }),
     }).then(r => r.json()),
 
   // Claude

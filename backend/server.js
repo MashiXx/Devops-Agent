@@ -42,7 +42,33 @@ let SERVERS = [
   },
 ];
 
-// ─── Helper: run one command over SSH, returns Promise<string> ────────────────
+// ─── SSH Config builder ──────────────────────────────────────────────────────
+function buildSSHConfig(serverConfig) {
+  const cfg = {
+    host:     serverConfig.host,
+    port:     parseInt(serverConfig.port) || 22,
+    username: serverConfig.user,
+    readyTimeout: 10000,
+    keepaliveInterval: 15000,
+    keepaliveCountMax: 3,
+  };
+
+  if (serverConfig.authType === "key" && serverConfig.privateKey) {
+    if (serverConfig.privateKey.startsWith("-----BEGIN")) {
+      cfg.privateKey = serverConfig.privateKey;
+    } else {
+      cfg.privateKey = fs.readFileSync(
+        path.resolve(serverConfig.privateKey.replace("~", process.env.HOME || ""))
+      );
+    }
+    if (serverConfig.passphrase) cfg.passphrase = serverConfig.passphrase;
+  } else {
+    cfg.password = serverConfig.password || "";
+  }
+  return cfg;
+}
+
+// ─── Helper: run one command over SSH (one-shot connection) ──────────────────
 function sshExec(serverConfig, command, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     const conn = new Client();
@@ -71,7 +97,6 @@ function sshExec(serverConfig, command, timeoutMs = 30000) {
           clearTimeout(timer);
           conn.end();
           if (timedOut) return;
-          // Return combined output; stderr inline for visibility
           const combined = [output, errOut].filter(Boolean).join("\n").trimEnd();
           resolve({ output: combined || "(no output)", exitCode: code });
         });
@@ -83,34 +108,98 @@ function sshExec(serverConfig, command, timeoutMs = 30000) {
       reject(err);
     });
 
-    // Build connect config
-    const connectCfg = {
-      host:     serverConfig.host,
-      port:     parseInt(serverConfig.port) || 22,
-      username: serverConfig.user,
-      readyTimeout: 10000,
-    };
-
-    if (serverConfig.authType === "key" && serverConfig.privateKey) {
-      // Detect raw key vs file path
-      if (serverConfig.privateKey.startsWith("-----BEGIN")) {
-        connectCfg.privateKey = serverConfig.privateKey;
-      } else {
-        try {
-          connectCfg.privateKey = fs.readFileSync(
-            path.resolve(serverConfig.privateKey.replace("~", process.env.HOME || ""))
-          );
-        } catch (e) {
-          return reject(new Error(`Cannot read private key: ${e.message}`));
-        }
-      }
-      if (serverConfig.passphrase) connectCfg.passphrase = serverConfig.passphrase;
-    } else {
-      connectCfg.password = serverConfig.password || "";
+    try {
+      conn.connect(buildSSHConfig(serverConfig));
+    } catch (e) {
+      reject(new Error(`SSH config error: ${e.message}`));
     }
-
-    conn.connect(connectCfg);
   });
+}
+
+// ─── Persistent SSH Connection Pool ─────────────────────────────────────────
+const POOL = new Map(); // serverId -> { conn, cwd }
+
+function getPooledConnection(serverId) {
+  return new Promise((resolve, reject) => {
+    const existing = POOL.get(serverId);
+    if (existing && existing.conn._sock && !existing.conn._sock.destroyed) {
+      return resolve(existing);
+    }
+    // Clean up stale entry
+    if (existing) POOL.delete(serverId);
+
+    const srv = SERVERS.find(s => s.id === serverId);
+    if (!srv) return reject(new Error("Server not found"));
+
+    const conn = new Client();
+    conn.on("ready", () => {
+      const entry = { conn, cwd: null };
+      POOL.set(serverId, entry);
+      resolve(entry);
+    });
+    conn.on("error", () => { POOL.delete(serverId); });
+    conn.on("close", () => { POOL.delete(serverId); });
+
+    try {
+      conn.connect(buildSSHConfig(srv));
+    } catch (e) {
+      reject(new Error(`SSH config error: ${e.message}`));
+    }
+  });
+}
+
+// Execute on persistent connection, preserving working directory
+function poolExec(pool, command, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
+    let output = "";
+    let errOut = "";
+    let timedOut = false;
+
+    // Wrap command: restore cwd, run command, then capture new cwd
+    const cdPrefix = pool.cwd ? `cd ${JSON.stringify(pool.cwd)} 2>/dev/null ; ` : "";
+    const wrapped = `${cdPrefix}${command} ; _ec=$? ; pwd ; exit $_ec`;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error(`Command timed out after ${timeoutMs / 1000}s`));
+    }, timeoutMs);
+
+    pool.conn.exec(wrapped, { pty: false }, (err, stream) => {
+      if (err) { clearTimeout(timer); return reject(err); }
+
+      stream.on("data",        (d) => { output += d.toString(); });
+      stream.stderr.on("data", (d) => { errOut += d.toString(); });
+
+      stream.on("close", (code) => {
+        clearTimeout(timer);
+        if (timedOut) return;
+
+        // Last line of stdout is the pwd
+        const lines = output.trimEnd().split("\n");
+        const lastLine = lines[lines.length - 1] || "";
+        if (lastLine.startsWith("/")) {
+          pool.cwd = lastLine;
+          lines.pop(); // remove pwd line from visible output
+        }
+
+        const combined = [lines.join("\n"), errOut].filter(Boolean).join("\n").trimEnd();
+        resolve({
+          output: combined || "(no output)",
+          exitCode: code,
+          cwd: pool.cwd,
+        });
+      });
+    });
+  });
+}
+
+// Disconnect persistent connection
+function disconnectPool(serverId) {
+  const entry = POOL.get(serverId);
+  if (entry) {
+    try { entry.conn.end(); } catch {}
+    POOL.delete(serverId);
+  }
 }
 
 // ─── ROUTES ──────────────────────────────────────────────────────────────────
@@ -159,6 +248,7 @@ app.put("/api/servers/:id", (req, res) => {
 
 // Delete server
 app.delete("/api/servers/:id", (req, res) => {
+  disconnectPool(req.params.id);
   SERVERS = SERVERS.filter(s => s.id !== req.params.id);
   res.json({ ok: true });
 });
@@ -182,20 +272,34 @@ app.post("/api/ssh/test", async (req, res) => {
   }
 });
 
-// Execute SSH command
+// Execute SSH command (persistent=true keeps connection alive + preserves cwd)
 app.post("/api/ssh/exec", async (req, res) => {
-  const { serverId, command, timeout } = req.body;
+  const { serverId, command, timeout, persistent } = req.body;
   if (!command) return res.status(400).json({ error: "command is required" });
 
   const srv = SERVERS.find(s => s.id === serverId);
   if (!srv) return res.status(404).json({ error: "Server not found" });
 
   try {
-    const result = await sshExec(srv, command, timeout || 30000);
-    res.json({ ok: true, ...result });
+    if (persistent) {
+      const pool = await getPooledConnection(serverId);
+      const result = await poolExec(pool, command, timeout || 30000);
+      res.json({ ok: true, ...result });
+    } else {
+      const result = await sshExec(srv, command, timeout || 30000);
+      res.json({ ok: true, ...result });
+    }
   } catch (err) {
+    if (persistent) POOL.delete(serverId);
     res.status(500).json({ ok: false, error: err.message, output: `Error: ${err.message}` });
   }
+});
+
+// Disconnect persistent SSH session
+app.post("/api/ssh/disconnect", (req, res) => {
+  const { serverId } = req.body;
+  disconnectPool(serverId);
+  res.json({ ok: true });
 });
 
 // Execute SSH command — streaming (SSE) for real-time output
@@ -232,19 +336,12 @@ app.get("/api/ssh/stream", (req, res) => {
 
   conn.on("error", err => { send("error", err.message); res.end(); });
 
-  // Build config same as sshExec
-  const cfg = {
-    host: srv.host, port: srv.port || 22,
-    username: srv.user, readyTimeout: 10000,
-  };
-  if (srv.authType === "key" && srv.privateKey) {
-    cfg.privateKey = srv.privateKey.startsWith("-----BEGIN")
-      ? srv.privateKey
-      : fs.readFileSync(path.resolve(srv.privateKey.replace("~", process.env.HOME || "")));
-  } else {
-    cfg.password = srv.password;
+  try {
+    conn.connect(buildSSHConfig(srv));
+  } catch (e) {
+    send("error", `SSH config error: ${e.message}`);
+    res.end();
   }
-  conn.connect(cfg);
 
   req.on("close", () => { try { conn.end(); } catch {} });
 });
