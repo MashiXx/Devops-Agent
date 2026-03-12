@@ -1,8 +1,6 @@
 # ⚡ AI DevOps Agent v2.0
 ### Claude AI + Real SSH + Terminal UI
 
-![Screenshot](screenshot.png)
-
 Ứng dụng DevOps Agent hoàn chỉnh: mô tả task bằng ngôn ngữ tự nhiên → Claude lên kế hoạch → thực thi lệnh thật qua SSH.
 
 ![Screenshot](images/screenshot.jpg)
